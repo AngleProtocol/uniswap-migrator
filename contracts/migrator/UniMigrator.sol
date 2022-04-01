@@ -10,10 +10,9 @@ import "../interfaces/IGUniRouter.sol";
 import "../interfaces/IGUniFactory.sol";
 import "../interfaces/IGUniPool.sol";
 
-/// @title CompSaver
-/// @author Forked but improved from https://github.com/compound-finance/compound-protocol/tree/master/contracts/Governance
-/// by CompSaver Core Team
-/// @notice Governance token of CompSaver's protocol
+/// @title GUNIMigrator
+/// @author Angle Core Team
+/// @notice Swaps G-UNI liquidity
 contract GUNIMigrator {
     using SafeERC20 for IERC20;
     address public owner;
@@ -24,6 +23,7 @@ contract GUNIMigrator {
     IGUniFactory public constant GUNIFACTORY = IGUniFactory(0xEA1aFf9dbFfD1580F6b81A3ad3589E66652dB7D9);
     address public constant USDCGAUGE = 0xEB7547a8a734b6fdDBB8Ce0C314a9E6485100a3C;
     address public constant ETHGAUGE = 0x3785Ce82be62a342052b9E5431e9D3a839cfB581;
+    address public ethGUNIPool;
 
     /// @notice Constructs a new CompSaver token
     constructor() {
@@ -66,19 +66,37 @@ contract GUNIMigrator {
         ILiquidityGauge(liquidityGauge).set_staking_token_and_scaling(poolCreated, amountSwapped * 10**18 / newGUNIBalance);
         if (proportionSwapped == 10**9) {
             ILiquidityGauge(liquidityGauge).commit_transfer_ownership(0xdC4e6DFe07EFCa50a197DF15D9200883eF4Eb1c8);
+        } else {
+            ethGUNIPool = poolCreated;
         }
     }
 
-    function finishPoolMigration(address newGUniPool, uint256 amountAgEURMin, uint256 amountETHMin) external onlyOwner {
+    function finishPoolMigration(uint256 amountAgEURMin, uint256 amountETHMin) external onlyOwner {
         address stakingToken = ILiquidityGauge(ETHGAUGE).staking_token();
         uint256 amountRecoverable = IERC20(stakingToken).balanceOf(ETHGAUGE);
         ILiquidityGauge(ETHGAUGE).recover_erc20(stakingToken, address(this), amountRecoverable);
         uint256 amountAgEUR;
         uint256 amountToken;
         (amountAgEUR, amountToken,) = GUNIROUTER.removeLiquidity(stakingToken, amountRecoverable, amountAgEURMin, amountETHMin, address(this));
-        GUNIROUTER.addLiquidity(newGUniPool, amountAgEUR, amountToken, amountAgEURMin, amountETHMin, ETHGAUGE);
+        GUNIROUTER.addLiquidity(ethGUNIPool, amountAgEUR, amountToken, amountAgEURMin, amountETHMin, ETHGAUGE);
         ILiquidityGauge(ETHGAUGE).commit_transfer_ownership(0xdC4e6DFe07EFCa50a197DF15D9200883eF4Eb1c8);
+        IERC20(AGEUR).safeTransfer(0xdC4e6DFe07EFCa50a197DF15D9200883eF4Eb1c8, IERC20(AGEUR).balanceOf(address(this)));
+        IERC20(WETH).safeTransfer(0xdC4e6DFe07EFCa50a197DF15D9200883eF4Eb1c8, IERC20(WETH).balanceOf(address(this)));
     }
+
+    /// @notice Executes a function
+	/// @param to Address to sent the value to
+	/// @param value Value to be sent
+	/// @param data Call function data
+	function execute(
+		address to,
+		uint256 value,
+		bytes calldata data
+	) external onlyOwner returns (bool, bytes memory) {
+        //solhint-disable-next-line
+		(bool success, bytes memory result) = to.call{ value: value }(data);
+		return (success, result);
+	}
 
 
 }
