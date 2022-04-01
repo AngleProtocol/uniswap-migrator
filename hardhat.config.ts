@@ -50,6 +50,9 @@ const config: HardhatUserConfig = {
       },
     ],
   },
+  vyper: {
+    version: '0.2.16',
+  },
   defaultNetwork: 'hardhat',
   networks: {
     hardhat: {
