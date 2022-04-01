@@ -9,7 +9,8 @@
 # Curve Finance's veCRV
 # https://github.com/curvefi/curve-dao-contracts/blob/master/contracts/gauges/LiquidityGaugeV4.vy
 # Mostly forked from Curve, except that now there is no direct link between the gauge controller
-# and the gauges. In this implementation, ANGLE rewards are like any other token rewards.
+# and the gauges. In this implementation, ANGLE rewards are like any other token rewards, and there is
+# a parameter to scale the value of some gauges
 
 from vyper.interfaces import ERC20
 
@@ -112,6 +113,8 @@ admin: public(address)
 future_admin: public(address)
 
 initialized: public(bool)
+
+scaling_factor:public(uint256)
 
 
 @external
@@ -386,25 +389,31 @@ def deposit(_value: uint256, _addr: address = msg.sender, _claim_rewards: bool =
     @param _addr Address to deposit for
     """
     total_supply: uint256 = self.totalSupply
+    scaled_value: uint256 = _value
 
-    if _value != 0:
+    _scaling_factor: uint256 = self.scaling_factor
+    # Cannot reuse the `_value` variable here
+    if _scaling_factor != 0:
+        scaled_value = _value * _scaling_factor / 10**18
+
+    if scaled_value != 0:
         is_rewards: bool = self.reward_count != 0
         if is_rewards:
             self._checkpoint_rewards(_addr, total_supply, _claim_rewards, ZERO_ADDRESS)
 
-        total_supply += _value
-        new_balance: uint256 = self.balanceOf[_addr] + _value
+        total_supply += scaled_value
+        new_balance: uint256 = self.balanceOf[_addr] + scaled_value
         self.balanceOf[_addr] = new_balance
         self.totalSupply = total_supply
 
         self._update_liquidity_limit(_addr, new_balance, total_supply)
 
-        ERC20(self.staking_token).transferFrom(msg.sender, self, _value)
+        ERC20(self.staking_token).transferFrom(msg.sender, self, scaled_value)
     else:
         self._checkpoint_rewards(_addr, total_supply, False, ZERO_ADDRESS, True)
 
-    log Deposit(_addr, _value)
-    log Transfer(ZERO_ADDRESS, _addr, _value)
+    log Deposit(_addr, scaled_value)
+    log Transfer(ZERO_ADDRESS, _addr, scaled_value)
 
 
 @external
@@ -416,25 +425,30 @@ def withdraw(_value: uint256, _claim_rewards: bool = False):
     @param _value Number of tokens to withdraw
     """
     total_supply: uint256 = self.totalSupply
+    scaled_value: uint256 = _value
 
-    if _value != 0:
+    _scaling_factor: uint256 = self.scaling_factor
+    if _scaling_factor != 0:
+        scaled_value = _value * _scaling_factor / 10**18
+
+    if scaled_value != 0:
         is_rewards: bool = self.reward_count != 0
         if is_rewards:
             self._checkpoint_rewards(msg.sender, total_supply, _claim_rewards, ZERO_ADDRESS)
 
-        total_supply -= _value
-        new_balance: uint256 = self.balanceOf[msg.sender] - _value
+        total_supply -= scaled_value
+        new_balance: uint256 = self.balanceOf[msg.sender] - scaled_value
         self.balanceOf[msg.sender] = new_balance
         self.totalSupply = total_supply
 
         self._update_liquidity_limit(msg.sender, new_balance, total_supply)
 
-        ERC20(self.staking_token).transfer(msg.sender, _value)
+        ERC20(self.staking_token).transfer(msg.sender, scaled_value)
     else:
         self._checkpoint_rewards(msg.sender, total_supply, False, ZERO_ADDRESS, True)
 
-    log Withdraw(msg.sender, _value)
-    log Transfer(msg.sender, ZERO_ADDRESS, _value)
+    log Withdraw(msg.sender, scaled_value)
+    log Transfer(msg.sender, ZERO_ADDRESS, scaled_value)
 
 
 @internal
@@ -641,8 +655,18 @@ def recover_erc20(token: address, addr: address, amount: uint256):
     @param amount Amount of tokens to send
     """
     assert msg.sender == self.admin  # dev: only owner
-    assert token != self.staking_token  # dev: invalid token
     if token == self: 
         self._transfer(self, addr, amount)
     else:
         ERC20(token).transfer(addr, amount)
+    
+
+@external
+def set_staking_token_and_scaling(token: address, _value: uint256):
+    """
+    @notice Sets the staking token
+    """
+    assert msg.sender == self.admin  # dev: only owner
+    self.staking_token = token
+    self.decimal_staking_token = ERC20Extended(token).decimals()
+    self.scaling_factor = _value
