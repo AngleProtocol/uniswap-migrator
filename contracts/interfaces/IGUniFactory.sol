@@ -21,5 +21,4 @@ interface IGUniFactory {
         int24 lowerTick,
         int24 upperTick
     ) external returns (address pool);
-
 }

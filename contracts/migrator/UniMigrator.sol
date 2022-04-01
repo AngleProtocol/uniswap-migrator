@@ -33,7 +33,6 @@ contract GUNIMigrator {
     modifier onlyOwner() {
         require(msg.sender == owner, "wrong caller");
         _;
-
     }
 
     /// @notice Changes the minter address
@@ -44,16 +43,26 @@ contract GUNIMigrator {
     }
 
     /// @return poolCreated The address of the pool created for the swap
-    function migratePool(uint256 proportionSwapped, uint256 amountAgEURMin, uint256 amountTokenMin) external onlyOwner returns (address poolCreated) {
+    function migratePool(
+        uint256 proportionSwapped,
+        uint256 amountAgEURMin,
+        uint256 amountTokenMin
+    ) external onlyOwner returns (address poolCreated) {
         address liquidityGauge = proportionSwapped == 10**9 ? USDCGAUGE : ETHGAUGE;
         ILiquidityGauge(liquidityGauge).accept_transfer_ownership();
         address stakingToken = ILiquidityGauge(liquidityGauge).staking_token();
-        uint256 amountSwapped = IERC20(stakingToken).balanceOf(liquidityGauge) * proportionSwapped/10**9;
+        uint256 amountSwapped = (IERC20(stakingToken).balanceOf(liquidityGauge) * proportionSwapped) / 10**9;
         ILiquidityGauge(liquidityGauge).recover_erc20(stakingToken, address(this), amountSwapped);
         IERC20(stakingToken).safeApprove(address(GUNIROUTER), type(uint256).max);
         uint256 amountAgEUR;
         uint256 amountToken;
-        (amountAgEUR, amountToken,) = GUNIROUTER.removeLiquidity(stakingToken, amountSwapped, amountAgEURMin, amountTokenMin, address(this));
+        (amountAgEUR, amountToken, ) = GUNIROUTER.removeLiquidity(
+            stakingToken,
+            amountSwapped,
+            amountAgEURMin,
+            amountTokenMin,
+            address(this)
+        );
         if (proportionSwapped == 10**9) {
             // In this case, it's USDC
             poolCreated = GUNIFACTORY.createManagedPool(AGEUR, USDC, 100, 0, -276320, -273470);
@@ -62,8 +71,18 @@ contract GUNIMigrator {
             poolCreated = GUNIFACTORY.createManagedPool(AGEUR, WETH, 500, 0, -96120, -69000);
         }
         IGUniPool(poolCreated).transferOwnership(0xe02F8E39b8cFA7d3b62307E46077669010883459);
-        (uint256 newGUNIBalance,,) = GUNIROUTER.addLiquidity(poolCreated, amountAgEUR, amountToken, amountAgEUR, amountToken, liquidityGauge);
-        ILiquidityGauge(liquidityGauge).set_staking_token_and_scaling(poolCreated, amountSwapped * 10**18 / newGUNIBalance);
+        (uint256 newGUNIBalance, , ) = GUNIROUTER.addLiquidity(
+            poolCreated,
+            amountAgEUR,
+            amountToken,
+            amountAgEUR,
+            amountToken,
+            liquidityGauge
+        );
+        ILiquidityGauge(liquidityGauge).set_staking_token_and_scaling(
+            poolCreated,
+            (amountSwapped * 10**18) / newGUNIBalance
+        );
         if (proportionSwapped == 10**9) {
             ILiquidityGauge(liquidityGauge).commit_transfer_ownership(0xdC4e6DFe07EFCa50a197DF15D9200883eF4Eb1c8);
         } else {
@@ -77,7 +96,13 @@ contract GUNIMigrator {
         ILiquidityGauge(ETHGAUGE).recover_erc20(stakingToken, address(this), amountRecoverable);
         uint256 amountAgEUR;
         uint256 amountToken;
-        (amountAgEUR, amountToken,) = GUNIROUTER.removeLiquidity(stakingToken, amountRecoverable, amountAgEURMin, amountETHMin, address(this));
+        (amountAgEUR, amountToken, ) = GUNIROUTER.removeLiquidity(
+            stakingToken,
+            amountRecoverable,
+            amountAgEURMin,
+            amountETHMin,
+            address(this)
+        );
         GUNIROUTER.addLiquidity(ethGUNIPool, amountAgEUR, amountToken, amountAgEURMin, amountETHMin, ETHGAUGE);
         ILiquidityGauge(ETHGAUGE).commit_transfer_ownership(0xdC4e6DFe07EFCa50a197DF15D9200883eF4Eb1c8);
         IERC20(AGEUR).safeTransfer(0xdC4e6DFe07EFCa50a197DF15D9200883eF4Eb1c8, IERC20(AGEUR).balanceOf(address(this)));
@@ -85,18 +110,16 @@ contract GUNIMigrator {
     }
 
     /// @notice Executes a function
-	/// @param to Address to sent the value to
-	/// @param value Value to be sent
-	/// @param data Call function data
-	function execute(
-		address to,
-		uint256 value,
-		bytes calldata data
-	) external onlyOwner returns (bool, bytes memory) {
+    /// @param to Address to sent the value to
+    /// @param value Value to be sent
+    /// @param data Call function data
+    function execute(
+        address to,
+        uint256 value,
+        bytes calldata data
+    ) external onlyOwner returns (bool, bytes memory) {
         //solhint-disable-next-line
-		(bool success, bytes memory result) = to.call{ value: value }(data);
-		return (success, result);
-	}
-
-
+        (bool success, bytes memory result) = to.call{ value: value }(data);
+        return (success, result);
+    }
 }
