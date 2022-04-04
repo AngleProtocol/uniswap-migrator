@@ -408,11 +408,11 @@ def deposit(_value: uint256, _addr: address = msg.sender, _claim_rewards: bool =
 
         self._update_liquidity_limit(_addr, new_balance, total_supply)
 
-        ERC20(self.staking_token).transferFrom(msg.sender, self, scaled_value)
+        ERC20(self.staking_token).transferFrom(msg.sender, self, _value)
     else:
         self._checkpoint_rewards(_addr, total_supply, False, ZERO_ADDRESS, True)
 
-    log Deposit(_addr, scaled_value)
+    log Deposit(_addr, _value)
     log Transfer(ZERO_ADDRESS, _addr, scaled_value)
 
 
@@ -443,11 +443,11 @@ def withdraw(_value: uint256, _claim_rewards: bool = False):
 
         self._update_liquidity_limit(msg.sender, new_balance, total_supply)
 
-        ERC20(self.staking_token).transfer(msg.sender, scaled_value)
+        ERC20(self.staking_token).transfer(msg.sender, _value)
     else:
         self._checkpoint_rewards(msg.sender, total_supply, False, ZERO_ADDRESS, True)
 
-    log Withdraw(msg.sender, scaled_value)
+    log Withdraw(msg.sender, _value)
     log Transfer(msg.sender, ZERO_ADDRESS, scaled_value)
 
 

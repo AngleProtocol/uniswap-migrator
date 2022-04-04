@@ -22,6 +22,16 @@ const func: DeployFunction = async ({ ethers, deployments, network }) => {
 
   const implementationAddress = (await deployments.get('LiquidityGaugeV4_Implementation')).address;
 
+  console.log('Now deploying the Migration contract');
+  await deploy('UniMigrator', {
+    contract: 'UniMigrator',
+    from: deployer.address,
+    log: !argv.ci,
+  });
+  const migratorAddress = (await deployments.get('UniMigrator')).address;
+
+  console.log('Success');
+
   // ------------------------------------------------------------------------------------------------------
   // ----------------------------- To be commented - Mainnet fork tests -----------------------------------
   // ------------------------------------------------------------------------------------------------------
@@ -44,7 +54,6 @@ const func: DeployFunction = async ({ ethers, deployments, network }) => {
   await network.provider.send('hardhat_setBalance', [multiSig, '0x10000000000000000000000000000']);
 
   const multiSigSigner = await ethers.provider.getSigner(multiSig);
-  console.log(multiSigSigner);
 
   const proxyAdminAddress: string = proxyAdmin !== undefined ? proxyAdmin : '0x';
   const contractProxyAdmin = new ethers.Contract(proxyAdminAddress, Interfaces.ProxyAdmin_Interface, multiSigSigner);

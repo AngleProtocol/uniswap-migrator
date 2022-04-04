@@ -103,5 +103,8 @@
     "ethereumjs-util": "^7.1.4",
     "fs-extra": "^10.0.0",
     "solc": "0.8.7"
+  },
+  "resolutions": {
+    "hardhat/**/@ethereumjs/tx": "3.5.0"
   }
 }
