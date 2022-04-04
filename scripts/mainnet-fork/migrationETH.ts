@@ -13,7 +13,7 @@ import { utils } from 'ethers';
 async function main() {
   const governor = '0xdC4e6DFe07EFCa50a197DF15D9200883eF4Eb1c8';
   const agEUR = '0x1a7e4e63778B4f12a199C062f3eFdD288afCBce8';
-  const weth = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48';
+  const weth = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
   await network.provider.request({
     method: 'hardhat_impersonateAccount',
     params: [governor],
@@ -21,6 +21,15 @@ async function main() {
 
   await network.provider.send('hardhat_setBalance', [governor, '0x10000000000000000000000000000']);
   const governorSigner = await ethers.provider.getSigner(governor);
+  // For deposits and withdrawals
+  const depositor = '0x2E7212016BA40a1ee366F3a54C5aD6b4916eae74';
+  await network.provider.request({
+    method: 'hardhat_impersonateAccount',
+    params: [depositor],
+  });
+
+  await network.provider.send('hardhat_setBalance', [depositor, '0x10000000000000000000000000000']);
+  const depositorSigner = await ethers.provider.getSigner(depositor);
   const [deployer] = await ethers.getSigners();
 
   const uniMigratorInterface = new utils.Interface([
@@ -43,10 +52,16 @@ async function main() {
     newLiquidityGaugeInterface,
     governorSigner,
   );
+  const contractLiquidityGaugeOtherSigner = new ethers.Contract(
+    liquidityGaugeAddress,
+    LiquidityGaugeV4_Interface,
+    depositorSigner,
+  );
   const uniMigrator = await deployments.get('UniMigrator');
   const uniMigratorContract = new ethers.Contract(uniMigrator.address, uniMigratorInterface, deployer);
   const agEURContract = new ethers.Contract(agEUR, erc20Interface, deployer);
   const wethContract = new ethers.Contract(weth, erc20Interface, deployer);
+  const guniContract = new ethers.Contract('0x26C2251801D2cfb5461751c984Dc3eAA358bdf0f', erc20Interface, deployer);
 
   console.log('Transferring ownership to the migrator contract');
   await (await contractLiquidityGauge.connect(governorSigner).commit_transfer_ownership(uniMigrator.address)).wait();
@@ -58,10 +73,15 @@ async function main() {
   const wethBalance = await wethContract.balanceOf(governor);
   console.log('');
 
+  console.log('GUNI balance prior');
+  console.log(formatAmount.ether(await guniContract.balanceOf(contractLiquidityGauge.address)));
+
   console.log('Liquidity Migration First step');
   const tx = await (await uniMigratorContract.connect(deployer).migratePool(2, 0, 0)).wait();
   console.log('Success');
   console.log('');
+  console.log('Checking leftover GUNI balance');
+  console.log(formatAmount.ether(await guniContract.balanceOf(contractLiquidityGauge.address)));
   console.log('Now performing checks on updates in the contract');
 
   console.log('Scaling factor');
@@ -73,35 +93,80 @@ async function main() {
   console.log('Current block timestamp');
   console.log((await ethers.provider.getBlock(tx.blockNumber)).timestamp);
   console.log('');
+  const newGuniContract = new ethers.Contract(newStakingToken, erc20Interface, deployer);
+
+  console.log('Now testing a withdrawal in the meantime during the transition');
+  const balancePre = await contractLiquidityGaugeOtherSigner.balanceOf(depositorSigner._address);
+  console.log('Withdrawer Balance', formatAmount.ether(balancePre));
+  await (await contractLiquidityGaugeOtherSigner.connect(depositorSigner)['withdraw(uint256)'](balancePre)).wait();
+  console.log('Success on the withdrawal');
+  expect(await contractLiquidityGaugeOtherSigner.balanceOf(depositorSigner._address)).to.be.equal(0);
+  const expectedBalancePre = balancePre.mul(parseAmount.ether('1')).div(scalingFactor);
+  expect(await newGuniContract.balanceOf(depositorSigner._address)).to.be.equal(expectedBalancePre);
+  console.log('Supply correctly withdrawn');
+  console.log('');
+  console.log('Now testing deposit');
+  await (
+    await newGuniContract
+      .connect(depositorSigner)
+      .approve(contractLiquidityGaugeOtherSigner.address, expectedBalancePre)
+  ).wait();
+  const prevBalancePre = await newGuniContract.balanceOf(contractLiquidityGaugeOtherSigner.address);
+  await (
+    await contractLiquidityGaugeOtherSigner.connect(depositorSigner)['deposit(uint256)'](expectedBalancePre)
+  ).wait();
+  expect(await newGuniContract.balanceOf(depositorSigner._address)).to.be.equal(0);
+  expect(await newGuniContract.balanceOf(contractLiquidityGaugeOtherSigner.address)).to.be.equal(
+    prevBalancePre.add(expectedBalancePre),
+  );
+  // Balance is rounded down
+  expect(await contractLiquidityGaugeOtherSigner.balanceOf(depositorSigner._address)).to.be.equal(balancePre.sub(1));
+  console.log('Success on the Deposit during the transition');
+  console.log('');
 
   console.log('Time for the second step of liquidity migration');
-  const tx2 = await (await uniMigratorContract.connect(deployer).finishPoolMigration(0, 0)).wait();
+  await (await uniMigratorContract.connect(deployer).finishPoolMigration(0, 0)).wait();
   console.log('Success');
 
-  /*
+  console.log('Checking GUNI balance of old token: it should be 0 this time');
+  expect(await guniContract.balanceOf(contractLiquidityGauge.address)).to.be.equal(0);
+
+  console.log('New G-UNI token balance');
+  console.log(formatAmount.ether(await newGuniContract.balanceOf(contractLiquidityGauge.address)));
+  console.log('');
+
+  console.log('Now checking leftover balances and if no liquidity lost');
+  const agEURBalanceNew = await agEURContract.balanceOf(governor);
+  const wethBalanceNew = await wethContract.balanceOf(governor);
+  console.log('agEUR Balance evolution');
+  console.log(
+    formatAmount.ether(agEURBalanceNew.sub(agEURBalance)),
+    formatAmount.ether(agEURBalanceNew),
+    formatAmount.ether(agEURBalance),
+  );
+  console.log('wETH Balance evolution');
+  console.log(
+    formatAmount.ether(wethBalanceNew.sub(wethBalance)),
+    formatAmount.ether(wethBalanceNew),
+    formatAmount.ether(wethBalance),
+  );
+  const oldUniPool = '0x9496D107a4b90c7d18c703e8685167f90ac273B0';
+  console.log('Old Uni pool balances');
+  console.log(
+    formatAmount.ether(await agEURContract.balanceOf(oldUniPool)),
+    formatAmount.ether(await wethContract.balanceOf(oldUniPool)),
+  );
+
   console.log('Now testing a withdrawal');
 
   // Verifying withdraw pre
-  const depositor = '0x4F4715CA99C973A55303bc4a5f3e3acBb9fF75DB';
-  await network.provider.request({
-    method: 'hardhat_impersonateAccount',
-    params: [depositor],
-  });
 
-  await network.provider.send('hardhat_setBalance', [depositor, '0x10000000000000000000000000000']);
-  const depositorSigner = await ethers.provider.getSigner(depositor);
-  const contractLiquidityGaugeOtherSigner = new ethers.Contract(
-    liquidityGaugeAddress,
-    LiquidityGaugeV4_Interface,
-    depositorSigner,
-  );
   const balance = await contractLiquidityGaugeOtherSigner.balanceOf(depositorSigner._address);
-  console.log('Withdrawer Balance', balance.toString());
+  console.log('Withdrawer Balance', formatAmount.ether(balance));
   await (await contractLiquidityGaugeOtherSigner.connect(depositorSigner)['withdraw(uint256)'](balance)).wait();
   console.log('Success on the withdrawal');
 
   expect(await contractLiquidityGaugeOtherSigner.balanceOf(depositorSigner._address)).to.be.equal(0);
-  const newGuniContract = new ethers.Contract(newStakingToken, erc20Interface, governorSigner);
   const expectedBalance = balance.mul(parseAmount.ether('1')).div(scalingFactor);
   expect(await newGuniContract.balanceOf(depositorSigner._address)).to.be.equal(expectedBalance);
   console.log('Supply correctly withdrawn');
@@ -119,7 +184,7 @@ async function main() {
   // Balance is rounded down
   expect(await contractLiquidityGaugeOtherSigner.balanceOf(depositorSigner._address)).to.be.equal(balance.sub(1));
   console.log('Success on the Deposit!');
-  */
+  console.log('');
 }
 
 main().catch(error => {
