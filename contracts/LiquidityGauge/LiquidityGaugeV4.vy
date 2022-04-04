@@ -64,6 +64,7 @@ event RewardDataUpdate:
     _amount: uint256
 
 struct Reward:
+    token: address
     distributor: address
     period_finish: uint256
     rate: uint256
@@ -115,7 +116,6 @@ future_admin: public(address)
 initialized: public(bool)
 
 scaling_factor:public(uint256)
-
 
 @external
 def __init__():

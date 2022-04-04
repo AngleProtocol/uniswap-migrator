@@ -28,6 +28,7 @@ async function main() {
     'function recover_erc20(address token, address addr, uint256 amount) external',
     'function set_staking_token_and_scaling_factor(address token, uint256 _value) external',
     'function initialized() external view returns(bool)',
+    'function logValues() external view returns(uint256)',
   ]);
 
   const erc20Interface = new utils.Interface(['function balanceOf(address token) external view returns(uint256)']);
@@ -59,36 +60,23 @@ async function main() {
   expect(await contractLiquidityGauge.admin()).to.be.equal(governor);
   expect(await contractLiquidityGaugeUpgrade.initialized()).to.be.equal(true);
 
+  const userAddress = '0x4F4715CA99C973A55303bc4a5f3e3acBb9fF75DB';
+  // The following values should be non null
+  console.log('Displaying working balance and reward integral');
+  console.log((await contractLiquidityGauge.working_balances(userAddress)).toString());
+  const value = (
+    await contractLiquidityGauge.reward_integral_for('0x31429d1856aD1377A8A0079410B297e1a9e214c2', userAddress)
+  ).toString();
+  console.log(value);
+
+  const value2 = await contractLiquidityGaugeUpgrade.logValues();
+  console.log(value2.toString());
+
   const rewardData = await contractLiquidityGauge.reward_data(angle);
   console.log(rewardData);
+  console.log('');
   console.log('Success: storage has not been tampered with');
   console.log('');
-  /*
-  console.log('Swapping USDC');
-  const uniswap = new ethers.Contract(
-    // Uniswap Router V2
-    '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D',
-    [
-      'function swapExactETHForTokens(uint amountOutMin, address[] calldata path, address to, uint deadline)' +
-        'external payable returns (uint[] memory amounts)',
-    ],
-    governorSigner,
-  );
-
-  const txSwap = await uniswap.swapExactETHForTokens(
-    0,
-    ['0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2', usdc],
-    contractLiquidityGauge.address,
-    parseAmount.ether(1),
-    {
-      value: parseAmount.ether(10),
-    },
-  );
-  await txSwap.wait();
-  console.log('Success, swapped USDC');
-  console.log('');
-  */
-
   const toAddress = '0xC16B81Af351BA9e64C1a069E3Ab18c244A1E3049';
   const amount = 100;
   console.log('Now checking recoverERC20 with stakingToken');

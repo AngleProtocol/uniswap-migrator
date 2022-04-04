@@ -13,7 +13,7 @@ import { utils } from 'ethers';
 async function main() {
   const governor = '0xdC4e6DFe07EFCa50a197DF15D9200883eF4Eb1c8';
   const agEUR = '0x1a7e4e63778B4f12a199C062f3eFdD288afCBce8';
-  const usdc = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48';
+  const weth = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48';
   await network.provider.request({
     method: 'hardhat_impersonateAccount',
     params: [governor],
@@ -35,9 +35,8 @@ async function main() {
     'function approve(address spender, uint256 amount)',
   ]);
 
-  const gUNIUSDC = '0x2bD9F7974Bc0E4Cb19B8813F8Be6034F3E772add';
-  const gaugeUSDC = CONTRACTS_ADDRESSES[ChainId.MAINNET].ExternalStakings![0].liquidityGaugeAddress;
-  const liquidityGaugeAddress: string = gaugeUSDC !== undefined ? gaugeUSDC : '0x';
+  const gaugeETH = CONTRACTS_ADDRESSES[ChainId.MAINNET].ExternalStakings![1].liquidityGaugeAddress;
+  const liquidityGaugeAddress: string = gaugeETH !== undefined ? gaugeETH : '0x';
   const contractLiquidityGauge = new ethers.Contract(liquidityGaugeAddress, LiquidityGaugeV4_Interface, governorSigner);
   const contractLiquidityGaugeUpgrade = new ethers.Contract(
     liquidityGaugeAddress,
@@ -47,7 +46,7 @@ async function main() {
   const uniMigrator = await deployments.get('UniMigrator');
   const uniMigratorContract = new ethers.Contract(uniMigrator.address, uniMigratorInterface, deployer);
   const agEURContract = new ethers.Contract(agEUR, erc20Interface, deployer);
-  const usdcContract = new ethers.Contract(usdc, erc20Interface, deployer);
+  const wethContract = new ethers.Contract(weth, erc20Interface, deployer);
 
   console.log('Transferring ownership to the migrator contract');
   await (await contractLiquidityGauge.connect(governorSigner).commit_transfer_ownership(uniMigrator.address)).wait();
@@ -56,10 +55,11 @@ async function main() {
 
   console.log('In the first place seeking governor balances');
   const agEURBalance = await agEURContract.balanceOf(governor);
-  const usdcBalance = await usdcContract.balanceOf(governor);
+  const wethBalance = await wethContract.balanceOf(governor);
+  console.log('');
 
-  console.log('Liquidity Migration');
-  const tx = await (await uniMigratorContract.connect(deployer).migratePool(1, 0, 0)).wait();
+  console.log('Liquidity Migration First step');
+  const tx = await (await uniMigratorContract.connect(deployer).migratePool(2, 0, 0)).wait();
   console.log('Success');
   console.log('');
   console.log('Now performing checks on updates in the contract');
@@ -73,6 +73,12 @@ async function main() {
   console.log('Current block timestamp');
   console.log((await ethers.provider.getBlock(tx.blockNumber)).timestamp);
   console.log('');
+
+  console.log('Time for the second step of liquidity migration');
+  const tx2 = await (await uniMigratorContract.connect(deployer).finishPoolMigration(0, 0)).wait();
+  console.log('Success');
+
+  /*
   console.log('Now testing a withdrawal');
 
   // Verifying withdraw pre
@@ -113,28 +119,7 @@ async function main() {
   // Balance is rounded down
   expect(await contractLiquidityGaugeOtherSigner.balanceOf(depositorSigner._address)).to.be.equal(balance.sub(1));
   console.log('Success on the Deposit!');
-  console.log('');
-  console.log('Now checking leftover balances and if no liquidity lost');
-  const agEURBalanceNew = await agEURContract.balanceOf(governor);
-  const usdcBalanceNew = await usdcContract.balanceOf(governor);
-  console.log('agEUR Balance evolution');
-  console.log(
-    formatAmount.ether(agEURBalanceNew.sub(agEURBalance)),
-    formatAmount.ether(agEURBalanceNew),
-    formatAmount.ether(agEURBalance),
-  );
-  console.log('USDC Balance evolution');
-  console.log(
-    formatAmount.usdc(usdcBalanceNew.sub(usdcBalance)),
-    formatAmount.usdc(usdcBalanceNew),
-    formatAmount.usdc(usdcBalance),
-  );
-  const oldUniPool = '0x7ED3F364668cd2b9449a8660974a26A092C64849';
-  console.log('Old Uni pool balances');
-  console.log(
-    formatAmount.ether(await agEURContract.balanceOf(oldUniPool)),
-    formatAmount.usdc(await usdcContract.balanceOf(oldUniPool)),
-  );
+  */
 }
 
 main().catch(error => {

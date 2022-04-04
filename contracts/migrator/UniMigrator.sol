@@ -30,6 +30,8 @@ contract UniMigrator {
     address private constant _GOVERNOR = 0xdC4e6DFe07EFCa50a197DF15D9200883eF4Eb1c8;
     address private constant _UNIUSDCPOOL = 0x7ED3F364668cd2b9449a8660974a26A092C64849;
     address private constant _UNIETHPOOL = 0x9496D107a4b90c7d18c703e8685167f90ac273B0;
+    address private constant _GUNIUSDC = 0x2bD9F7974Bc0E4Cb19B8813F8Be6034F3E772add;
+    address private constant _GUNIETH = 0x26C2251801D2cfb5461751c984Dc3eAA358bdf0f;
     IUniswapPositionManager private constant _UNI = IUniswapPositionManager(0xC36442b4a4522E871399CD717aBDD847Ab11FE88);
     address public ethGUNIPool;
 
@@ -62,19 +64,20 @@ contract UniMigrator {
         uint160 sqrtPriceX96Existing;
         if (gaugeType == 1) {
             liquidityGauge = _USDCGAUGE;
-            stakingToken = ILiquidityGauge(liquidityGauge).staking_token();
+            stakingToken = _GUNIUSDC;
             amountSwapped = IERC20(stakingToken).balanceOf(liquidityGauge);
             (sqrtPriceX96Existing, , , , , , ) = IUniswapV3Pool(_UNIUSDCPOOL).slot0();
             IERC20(_USDC).safeApprove(address(_GUNIROUTER), type(uint256).max);
         } else {
             liquidityGauge = _ETHGAUGE;
-            stakingToken = ILiquidityGauge(liquidityGauge).staking_token();
+            stakingToken = _GUNIETH;
             amountSwapped = IERC20(stakingToken).balanceOf(liquidityGauge) / 2;
             (sqrtPriceX96Existing, , , , , , ) = IUniswapV3Pool(_UNIETHPOOL).slot0();
             IERC20(_WETH).safeApprove(address(_GUNIROUTER), type(uint256).max);
         }
         IERC20(stakingToken).safeApprove(address(_GUNIROUTER), type(uint256).max);
-        IERC20(_AGEUR).safeApprove(address(_GUNIROUTER), type(uint256).max);
+        uint256 allowance = IERC20(_AGEUR).allowance(address(this), address(_GUNIROUTER));
+        IERC20(_AGEUR).safeIncreaseAllowance(address(_GUNIROUTER), type(uint256).max - allowance);
         ILiquidityGauge(liquidityGauge).accept_transfer_ownership();
         ILiquidityGauge(liquidityGauge).recover_erc20(stakingToken, address(this), amountSwapped);
         
@@ -130,19 +133,25 @@ contract UniMigrator {
     }
 
     function finishPoolMigration(uint256 amountAgEURMin, uint256 amountETHMin) external onlyOwner {
-        address stakingToken = ILiquidityGauge(_ETHGAUGE).staking_token();
-        uint256 amountRecoverable = IERC20(stakingToken).balanceOf(_ETHGAUGE);
-        ILiquidityGauge(_ETHGAUGE).recover_erc20(stakingToken, address(this), amountRecoverable);
+        uint256 amountRecoverable = IERC20(_GUNIETH).balanceOf(_ETHGAUGE);
+        ILiquidityGauge(_ETHGAUGE).recover_erc20(_GUNIETH, address(this), amountRecoverable);
         uint256 amountAgEUR;
         uint256 amountToken;
         (amountAgEUR, amountToken, ) = _GUNIROUTER.removeLiquidity(
-            stakingToken,
+            _GUNIETH,
             amountRecoverable,
             amountAgEURMin,
             amountETHMin,
             address(this)
         );
-        _GUNIROUTER.addLiquidity(ethGUNIPool, amountAgEUR, amountToken, amountAgEURMin, amountETHMin, _ETHGAUGE);
+        console.log("Balances");
+        console.log(amountAgEUR, amountToken);
+        uint256 newGUNIBalance;
+        (amountAgEUR, amountToken, newGUNIBalance) = _GUNIROUTER.addLiquidity(ethGUNIPool, amountAgEUR, amountToken, amountAgEURMin, amountETHMin, _ETHGAUGE);
+        console.log("agEUR added", amountAgEUR);
+        console.log("Token added", amountToken);
+        console.log("Variation in GUNI positions");
+        console.log(amountRecoverable, newGUNIBalance);
         ILiquidityGauge(_ETHGAUGE).commit_transfer_ownership(_GOVERNOR);
         IERC20(_AGEUR).safeTransfer(_GOVERNOR, IERC20(_AGEUR).balanceOf(address(this)));
         IERC20(_WETH).safeTransfer(_GOVERNOR, IERC20(_WETH).balanceOf(address(this)));
