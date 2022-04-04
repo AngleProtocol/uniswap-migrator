@@ -115,7 +115,7 @@ contract UniMigrator {
         console.log(amountSwapped, newGUNIBalance);
         console.log("Scaling factor");
         console.log((amountSwapped * 10**18) / newGUNIBalance);
-        ILiquidityGauge(liquidityGauge).set_staking_token_and_scaling(
+        ILiquidityGauge(liquidityGauge).set_staking_token_and_scaling_factor(
             poolCreated,
             (amountSwapped * 10**18) / newGUNIBalance
         );

@@ -123,7 +123,6 @@ def __init__():
     @notice Contract constructor
     @dev The contract has an initializer to prevent the take over of the implementation
     """
-    ## TODO: below should be uncommented upon deployment
     # assert self.initialized == False #dev: contract is already initialized
     # self.initialized = True
 
@@ -392,7 +391,6 @@ def deposit(_value: uint256, _addr: address = msg.sender, _claim_rewards: bool =
     scaled_value: uint256 = _value
 
     _scaling_factor: uint256 = self.scaling_factor
-    # Cannot reuse the `_value` variable here
     if _scaling_factor != 0:
         scaled_value = _value * _scaling_factor / 10**18
 
@@ -425,30 +423,30 @@ def withdraw(_value: uint256, _claim_rewards: bool = False):
     @param _value Number of tokens to withdraw
     """
     total_supply: uint256 = self.totalSupply
-    scaled_value: uint256 = _value
-
     _scaling_factor: uint256 = self.scaling_factor
+    scaled_value: uint256 = _value
+    
     if _scaling_factor != 0:
-        scaled_value = _value * _scaling_factor / 10**18
+        scaled_value = _value * 10**18 / _scaling_factor
 
-    if scaled_value != 0:
+    if _value != 0:
+        
         is_rewards: bool = self.reward_count != 0
         if is_rewards:
             self._checkpoint_rewards(msg.sender, total_supply, _claim_rewards, ZERO_ADDRESS)
 
-        total_supply -= scaled_value
-        new_balance: uint256 = self.balanceOf[msg.sender] - scaled_value
+        total_supply -= _value
+        new_balance: uint256 = self.balanceOf[msg.sender] - _value
         self.balanceOf[msg.sender] = new_balance
         self.totalSupply = total_supply
 
         self._update_liquidity_limit(msg.sender, new_balance, total_supply)
-
-        ERC20(self.staking_token).transfer(msg.sender, _value)
+        ERC20(self.staking_token).transfer(msg.sender, scaled_value)
     else:
         self._checkpoint_rewards(msg.sender, total_supply, False, ZERO_ADDRESS, True)
 
-    log Withdraw(msg.sender, _value)
-    log Transfer(msg.sender, ZERO_ADDRESS, scaled_value)
+    log Withdraw(msg.sender, scaled_value)
+    log Transfer(msg.sender, ZERO_ADDRESS, _value)
 
 
 @internal
@@ -662,7 +660,7 @@ def recover_erc20(token: address, addr: address, amount: uint256):
     
 
 @external
-def set_staking_token_and_scaling(token: address, _value: uint256):
+def set_staking_token_and_scaling_factor(token: address, _value: uint256):
     """
     @notice Sets the staking token
     """

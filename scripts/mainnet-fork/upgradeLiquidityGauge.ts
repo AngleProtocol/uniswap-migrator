@@ -26,7 +26,8 @@ async function main() {
 
   const newLiquidityGaugeInterface = new utils.Interface([
     'function recover_erc20(address token, address addr, uint256 amount) external',
-    'function set_staking_token_and_scaling(address token, uint256 _value) external',
+    'function set_staking_token_and_scaling_factor(address token, uint256 _value) external',
+    'function initialized() external view returns(bool)',
   ]);
 
   const erc20Interface = new utils.Interface(['function balanceOf(address token) external view returns(uint256)']);
@@ -55,6 +56,11 @@ async function main() {
   expect(await contractLiquidityGauge.decimal_staking_token()).to.be.equal(18);
   expect(await contractLiquidityGauge.reward_count()).to.be.equal(1);
   expect(await contractLiquidityGauge.reward_tokens(0)).to.be.equal(angle);
+  expect(await contractLiquidityGauge.admin()).to.be.equal(governor);
+  expect(await contractLiquidityGaugeUpgrade.initialized()).to.be.equal(true);
+
+  const rewardData = await contractLiquidityGauge.reward_data(angle);
+  console.log(rewardData);
   console.log('Success: storage has not been tampered with');
   console.log('');
   /*

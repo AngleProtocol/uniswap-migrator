@@ -7,7 +7,7 @@ interface ILiquidityGauge {
     function staking_token() external returns (address stakingToken);
 
     // solhint-disable-next-line
-    function set_staking_token_and_scaling(address token, uint256 value) external;
+    function set_staking_token_and_scaling_factor(address token, uint256 value) external;
 
     // solhint-disable-next-line
     function recover_erc20(
