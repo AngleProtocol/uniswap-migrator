@@ -76,7 +76,7 @@ async function main() {
   console.log('GUNI balance prior');
   console.log(formatAmount.ether(await guniContract.balanceOf(contractLiquidityGauge.address)));
 
-  console.log('Liquidity Migration First step');
+  console.log('Liquidity Migration');
   const tx = await (await uniMigratorContract.connect(deployer).migratePool(2, 0, 0)).wait();
   console.log('Success');
   console.log('');
@@ -121,12 +121,8 @@ async function main() {
   );
   // Balance is rounded down
   expect(await contractLiquidityGaugeOtherSigner.balanceOf(depositorSigner._address)).to.be.equal(balancePre.sub(1));
-  console.log('Success on the Deposit during the transition');
+  console.log('Success on the Deposit');
   console.log('');
-
-  console.log('Time for the second step of liquidity migration');
-  await (await uniMigratorContract.connect(deployer).finishPoolMigration(0, 0)).wait();
-  console.log('Success');
 
   console.log('Checking GUNI balance of old token: it should be 0 this time');
   expect(await guniContract.balanceOf(contractLiquidityGauge.address)).to.be.equal(0);

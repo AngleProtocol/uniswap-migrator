@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0
 
 pragma solidity ^0.8.7;
+
 interface IUniswapPositionManager {
     function multicall(bytes[] calldata data) external payable returns (bytes[] memory results);
 
@@ -30,5 +31,4 @@ interface IUniswapPositionManager {
             uint128 tokensOwed0,
             uint128 tokensOwed1
         );
-
 }
