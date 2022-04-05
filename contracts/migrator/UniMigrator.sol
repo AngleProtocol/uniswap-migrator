@@ -96,7 +96,9 @@ contract UniMigrator {
             poolCreated = _GUNIFACTORY.createManagedPool(_AGEUR, _USDC, 100, 0, -276320, -273470);
         } else {
             // In this other case it's wETH
-            _UNI.createAndInitializePoolIfNecessary(_AGEUR, _WETH, 500, sqrtPriceX96Existing);
+            address pool = _UNI.createAndInitializePoolIfNecessary(_AGEUR, _WETH, 500, sqrtPriceX96Existing);
+            // Increasing observation cardinality on the new pool
+            IUniswapV3Pool(pool).increaseObservationCardinalityNext(144);
             poolCreated = _GUNIFACTORY.createManagedPool(_AGEUR, _WETH, 500, 0, -96120, -69000);
         }
         console.log("poolCreated", poolCreated);
