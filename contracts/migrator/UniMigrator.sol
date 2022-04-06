@@ -73,124 +73,106 @@ contract UniMigrator {
             liquidityGauge = _ETHGAUGE;
             stakingToken = _GUNIETH;
             token = _WETH;
-            (sqrtPriceX96Existing, , , , , , ) = IUniswapV3Pool(_UNIETHPOOL).slot0();
         }
+        // Giving allowances: we need it to add and remove liquidity
         IERC20(token).safeApprove(address(_GUNIROUTER), type(uint256).max);
-        uint256 amountSwapped = IERC20(stakingToken).balanceOf(liquidityGauge);
         IERC20(stakingToken).safeApprove(address(_GUNIROUTER), type(uint256).max);
         IERC20(_AGEUR).safeIncreaseAllowance(
             address(_GUNIROUTER),
             type(uint256).max - IERC20(_AGEUR).allowance(address(this), address(_GUNIROUTER))
         );
+        // Computing amount to recover
+        uint256 amountRecovered = IERC20(stakingToken).balanceOf(liquidityGauge);
         ILiquidityGauge(liquidityGauge).accept_transfer_ownership();
-        ILiquidityGauge(liquidityGauge).recover_erc20(stakingToken, address(this), amountSwapped);
+        ILiquidityGauge(liquidityGauge).recover_erc20(stakingToken, address(this), amountRecovered);
 
         uint256 amountAgEUR;
         uint256 amountToken;
+        // Removing all liquidity
         (amountAgEUR, amountToken, ) = _GUNIROUTER.removeLiquidity(
             stakingToken,
-            amountSwapped,
+            amountRecovered,
             amountAgEURMin,
             amountTokenMin,
             address(this)
         );
         if (gaugeType == 1) {
-            // In this case, it's _USDC
+            // In this case, it's _USDC: we need to create the pool
             _UNI.createAndInitializePoolIfNecessary(_AGEUR, _USDC, 100, sqrtPriceX96Existing);
             poolCreated = _GUNIFACTORY.createManagedPool(_AGEUR, _USDC, 100, 0, -276320, -273470);
         } else {
             // In this other case it's wETH
-            // Increasing observation cardinality on the new pool
+            // Increasing observation cardinality on the new pool (it already exists)
             IUniswapV3Pool(_ETHNEWPOOL).increaseObservationCardinalityNext(144);
-            (uint256 newPoolPrice, , , , , , ) = IUniswapV3Pool(_ETHNEWPOOL).slot0();
-            uint256 oldPoolSpotPrice = (uint256(sqrtPriceX96Existing) * uint256(sqrtPriceX96Existing) * 1e18) >>
-                (96 * 2);
-            newPoolPrice = (uint256(newPoolPrice) * uint256(newPoolPrice) * 1e18) >> (96 * 2);
-
-            uint256 xBalance = IERC20(_AGEUR).balanceOf(_ETHNEWPOOL);
-            uint256 yBalance = IERC20(_WETH).balanceOf(_ETHNEWPOOL);
-            console.log("New pool price", newPoolPrice, 10**18 / newPoolPrice);
-            console.log("Current Spot Price", oldPoolSpotPrice, 10**18 / oldPoolSpotPrice);
-            console.log("Balances", xBalance, yBalance);
-            
-            // In this case price ETH/agEUR is lower in the new pool: we need to sell agEUR and buy ETH to increase it
-            if (oldPoolSpotPrice > newPoolPrice) {
-                // Assumes a very small rebalancing `buyAmount` -> we neglect second order term in the computation
-                // This is the amount of agEUR to sell
-                uint256 buyAmount = ((oldPoolSpotPrice * xBalance**2) / 10**18 - xBalance * yBalance) /
-                    ((2 * yBalance * 9995) / 10000 + (oldPoolSpotPrice * xBalance * 5) / 10**22);
-                IERC20(_AGEUR).safeApprove(_UNIROUTER, buyAmount);
-
-                amountAgEUR -= buyAmount;
-                uint256 amountOut = IUniswapV3Router(_UNIROUTER).exactInputSingle(
-                    ExactInputSingleParams(_AGEUR, _WETH, 500, address(this), block.timestamp, buyAmount, 0, 0)
-                );
-                console.log("Change amounts", buyAmount, amountOut);
-                amountToken += amountOut;
-                console.log("Post transfer balances", xBalance - buyAmount, yBalance + amountOut);
-                console.log(
-                    "Prices",
-                    ((yBalance + amountOut) * 10**18) / (xBalance - buyAmount),
-                    (xBalance - buyAmount) / (yBalance + amountOut)
-                );
-            } else {
-                // Need to buy agEUR: computing the optimal movement as if in UniV2
-                // This is the optimal bought amount to get to target price
-                uint256 buyAmount = (yBalance * xBalance - (oldPoolSpotPrice * xBalance**2) / 10**18) /
-                    (yBalance + (yBalance * 10000) / 9995);
-                IERC20(_AGEUR).safeApprove(_UNIROUTER, buyAmount);
-                amountAgEUR += buyAmount;
-                uint256 amountIn = IUniswapV3Router(_UNIROUTER).exactOutputSingle(
-                    ExactOutputSingleParams(
-                        _WETH,
-                        _AGEUR,
-                        500,
-                        address(this),
-                        block.timestamp,
-                        buyAmount,
-                        type(uint256).max,
-                        0
-                    )
-                );
-                console.log("Change amounts", buyAmount, amountIn);
-                console.log("Post transfer balances", xBalance + buyAmount, yBalance - amountIn);
-                console.log(
-                    "Prices",
-                    ((yBalance - amountIn) * 10**18) / (xBalance + buyAmount),
-                    (xBalance + buyAmount) / (yBalance - amountIn)
-                );
-                amountToken -= amountIn;
-            }
             poolCreated = _GUNIFACTORY.createManagedPool(_AGEUR, _WETH, 500, 0, -96120, -69000);
-            // poolCreated = _GUNIFACTORY.createManagedPool(_AGEUR, _WETH, 500, 0, -96120, -87330);
         }
+
         console.log("poolCreated", poolCreated);
         console.log("agEUR removed", amountAgEUR);
         console.log("Token removed", amountToken);
+
+        // Transfering ownership of the new pool ot AngleMaster
         IGUniPool(poolCreated).transferOwnership(0xe02F8E39b8cFA7d3b62307E46077669010883459);
-        uint256 newGUNIBalance;
-        (amountAgEUR, amountToken, newGUNIBalance) = _GUNIROUTER.addLiquidity(
-            poolCreated,
-            amountAgEUR,
-            amountToken,
-            amountAgEURMin,
-            amountTokenMin,
-            liquidityGauge
-        );
-        console.log("agEUR added", amountAgEUR);
-        console.log("Token added", amountToken);
+
+        // Adding liquidity
+        _GUNIROUTER.addLiquidity(poolCreated, amountAgEUR, amountToken, amountAgEURMin, amountTokenMin, liquidityGauge);
+        if (gaugeType != 1) {
+            // In the case of wETH, as the pool does not already exist: we have issues when removing this
+            uint256 agEURBalance = IERC20(_AGEUR).balanceOf(address(this));
+            uint256 ethBalance = IERC20(token).balanceOf(address(this));
+            console.log("agEUR leftover", IERC20(_AGEUR).balanceOf(address(this)));
+            console.log("wETH leftover", IERC20(token).balanceOf(address(this)));
+            _swapLogic(ethBalance, agEURBalance, poolCreated, liquidityGauge);
+            console.log("agEUR leftover 2", IERC20(_AGEUR).balanceOf(address(this)));
+            console.log("wETH leftover 2", IERC20(token).balanceOf(address(this)));
+            agEURBalance = IERC20(_AGEUR).balanceOf(address(this));
+            ethBalance = IERC20(token).balanceOf(address(this));
+            _swapLogic(ethBalance, agEURBalance, poolCreated, liquidityGauge);
+            console.log("agEUR leftover 3", IERC20(_AGEUR).balanceOf(address(this)));
+            console.log("wETH leftover 3", IERC20(token).balanceOf(address(this)));
+            agEURBalance = IERC20(_AGEUR).balanceOf(address(this));
+            ethBalance = IERC20(token).balanceOf(address(this));
+            _swapLogic(ethBalance, agEURBalance, poolCreated, liquidityGauge);
+        }
+        uint256 newGUNIBalance = IERC20(poolCreated).balanceOf(liquidityGauge);
+        console.log("agEUR leftover finally", IERC20(_AGEUR).balanceOf(address(this)));
+        console.log("Token leftover finally", IERC20(token).balanceOf(address(this)));
         console.log("Variation in GUNI positions");
-        console.log(amountSwapped, newGUNIBalance);
+        console.log(amountRecovered, newGUNIBalance);
         console.log("Scaling factor");
-        console.log((amountSwapped * 10**18) / newGUNIBalance);
+        console.log((amountRecovered * 10**18) / newGUNIBalance);
         ILiquidityGauge(liquidityGauge).set_staking_token_and_scaling_factor(
             poolCreated,
-            (amountSwapped * 10**18) / newGUNIBalance
+            (amountRecovered * 10**18) / newGUNIBalance
         );
-
         ILiquidityGauge(liquidityGauge).commit_transfer_ownership(_GOVERNOR);
         IERC20(token).safeTransfer(_GOVERNOR, IERC20(token).balanceOf(address(this)));
         IERC20(_AGEUR).safeTransfer(_GOVERNOR, IERC20(_AGEUR).balanceOf(address(this)));
+    }
+
+    function _swapLogic(
+        uint256 ethBalance,
+        uint256 agEURBalance,
+        address poolCreated,
+        address liquidityGauge
+    ) internal {
+        if (ethBalance > (10**18) / 2) {
+            IERC20(_WETH).safeApprove(_UNIROUTER, ethBalance / 2);
+            uint256 amountOut = IUniswapV3Router(_UNIROUTER).exactInputSingle(
+                ExactInputSingleParams(_WETH, _AGEUR, 500, address(this), block.timestamp, ethBalance / 2, 0, 0)
+            );
+            _GUNIROUTER.addLiquidity(poolCreated, agEURBalance + amountOut, ethBalance / 2, 0, 0, liquidityGauge);
+            console.log("Did an ETH swap to reinstore equilibrium");
+            console.log("Amount Out", amountOut);
+        } else if (agEURBalance > 1000 * 10**18) {
+            IERC20(_AGEUR).safeApprove(_UNIROUTER, agEURBalance / 2);
+            uint256 amountOut = IUniswapV3Router(_UNIROUTER).exactInputSingle(
+                ExactInputSingleParams(_AGEUR, _WETH, 500, address(this), block.timestamp, agEURBalance / 2, 0, 0)
+            );
+            _GUNIROUTER.addLiquidity(poolCreated, agEURBalance / 2, ethBalance + amountOut, 0, 0, liquidityGauge);
+            console.log("Did an agEUR swap to reinstore equilibrium");
+            console.log("Amount Out", amountOut);
+        }
     }
 
     /// @notice Executes a function
