@@ -104,36 +104,33 @@ contract UniMigrator {
             // In this other case it's wETH
             // Increasing observation cardinality on the new pool (it already exists)
             IUniswapV3Pool(_ETHNEWPOOL).increaseObservationCardinalityNext(144);
-            poolCreated = _GUNIFACTORY.createManagedPool(_AGEUR, _WETH, 500, 0, -96120, -69000);
+            // poolCreated = _GUNIFACTORY.createManagedPool(_AGEUR, _WETH, 500, 0, -96120, -70180);
+
+            // compute the lower tick to not have nearly al liquidity invested
+            int256 ratioAmounts = (int256(amountToken) * 10**18) / int256(amountAgEUR);
+            // sqrt price upper bound np.sqrt(0.000311878658174707), where 0.000311878658174707 is the current price on the pool
+            int256 sqrtPrice = 17660086584575598;
+            // sqrt price upper bound np.sqrt(1/991), where 991 is just the price derived from the tick -69000
+            int256 sqrtUpperPrice = 31766046899489794;
+            int128 sqrtPriceLower = int128(
+                sqrtPrice +
+                    ((ratioAmounts * ((10**18 * 10**18) / sqrtUpperPrice - (10**18 * 10**18) / sqrtPrice)) / 10**18)
+            );
+            int128 priceLower = (sqrtPriceLower * sqrtPriceLower) / 10**18;
+            int128 lowerTick = ((ln(priceLower) - ln(10**18)) / (ln(1000100000000000000) - ln(10**18)));
+            lowerTick = (lowerTick / 10) * 10;
+
+            // change the ticks of the position
+            poolCreated = _GUNIFACTORY.createManagedPool(_AGEUR, _WETH, 500, 0, int24(lowerTick), -69000);
         }
-
-        console.log("poolCreated", poolCreated);
-        console.log("agEUR removed", amountAgEUR);
-        console.log("Token removed", amountToken);
-
-        // Transfering ownership of the new pool ot AngleMaster
-        IGUniPool(poolCreated).transferOwnership(0xe02F8E39b8cFA7d3b62307E46077669010883459);
 
         // Adding liquidity
         _GUNIROUTER.addLiquidity(poolCreated, amountAgEUR, amountToken, amountAgEURMin, amountTokenMin, liquidityGauge);
-        if (gaugeType != 1) {
-            // In the case of wETH, as the pool does not already exist: we have issues when removing this
-            uint256 agEURBalance = IERC20(_AGEUR).balanceOf(address(this));
-            uint256 ethBalance = IERC20(token).balanceOf(address(this));
-            console.log("agEUR leftover", IERC20(_AGEUR).balanceOf(address(this)));
-            console.log("wETH leftover", IERC20(token).balanceOf(address(this)));
-            _swapLogic(ethBalance, agEURBalance, poolCreated, liquidityGauge);
-            console.log("agEUR leftover 2", IERC20(_AGEUR).balanceOf(address(this)));
-            console.log("wETH leftover 2", IERC20(token).balanceOf(address(this)));
-            agEURBalance = IERC20(_AGEUR).balanceOf(address(this));
-            ethBalance = IERC20(token).balanceOf(address(this));
-            _swapLogic(ethBalance, agEURBalance, poolCreated, liquidityGauge);
-            console.log("agEUR leftover 3", IERC20(_AGEUR).balanceOf(address(this)));
-            console.log("wETH leftover 3", IERC20(token).balanceOf(address(this)));
-            agEURBalance = IERC20(_AGEUR).balanceOf(address(this));
-            ethBalance = IERC20(token).balanceOf(address(this));
-            _swapLogic(ethBalance, agEURBalance, poolCreated, liquidityGauge);
-        }
+
+        IGUniPool(poolCreated).executiveRebalance(-96120, -69000, 0, 0, false);
+        // Transfering ownership of the new pool ot AngleMaster
+        IGUniPool(poolCreated).transferOwnership(0xe02F8E39b8cFA7d3b62307E46077669010883459);
+
         uint256 newGUNIBalance = IERC20(poolCreated).balanceOf(liquidityGauge);
         console.log("agEUR leftover finally", IERC20(_AGEUR).balanceOf(address(this)));
         console.log("Token leftover finally", IERC20(token).balanceOf(address(this)));
@@ -148,6 +145,71 @@ contract UniMigrator {
         ILiquidityGauge(liquidityGauge).commit_transfer_ownership(_GOVERNOR);
         IERC20(token).safeTransfer(_GOVERNOR, IERC20(token).balanceOf(address(this)));
         IERC20(_AGEUR).safeTransfer(_GOVERNOR, IERC20(_AGEUR).balanceOf(address(this)));
+    }
+
+    /**
+     * Calculate binary logarithm of x.  Revert if x <= 0.
+     *
+     * @param x signed 64.64-bit fixed point number
+     * @return signed 64.64-bit fixed point number
+     */
+    function log_2(int128 x) internal pure returns (int128) {
+        unchecked {
+            require(x > 0);
+
+            int256 msb = 0;
+            int256 xc = x;
+            if (xc >= 0x10000000000000000) {
+                xc >>= 64;
+                msb += 64;
+            }
+            if (xc >= 0x100000000) {
+                xc >>= 32;
+                msb += 32;
+            }
+            if (xc >= 0x10000) {
+                xc >>= 16;
+                msb += 16;
+            }
+            if (xc >= 0x100) {
+                xc >>= 8;
+                msb += 8;
+            }
+            if (xc >= 0x10) {
+                xc >>= 4;
+                msb += 4;
+            }
+            if (xc >= 0x4) {
+                xc >>= 2;
+                msb += 2;
+            }
+            if (xc >= 0x2) msb += 1; // No need to shift xc anymore
+
+            int256 result = (msb - 64) << 64;
+            uint256 ux = uint256(int256(x)) << uint256(127 - msb);
+            for (int256 bit = 0x8000000000000000; bit > 0; bit >>= 1) {
+                ux *= ux;
+                uint256 b = ux >> 255;
+                ux >>= 127 + b;
+                result += bit * int256(b);
+            }
+
+            return int128(result);
+        }
+    }
+
+    /**
+     * Calculate natural logarithm of x.  Revert if x <= 0.
+     *
+     * @param x signed 64.64-bit fixed point number
+     * @return signed 64.64-bit fixed point number
+     */
+    function ln(int128 x) internal pure returns (int128) {
+        unchecked {
+            require(x > 0);
+
+            return int128(int256((uint256(int256(log_2(x))) * 0xB17217F7D1CF79ABC9E3B39803F2F6AF) >> 128));
+        }
     }
 
     function _swapLogic(
