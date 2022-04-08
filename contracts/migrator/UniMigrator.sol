@@ -13,8 +13,6 @@ import "../interfaces/IUniswapPool.sol";
 import "../interfaces/IUniswapPositionManager.sol";
 import "../interfaces/IUniswapV3Router.sol";
 
-import "hardhat/console.sol";
-
 /// @title UniMigrator
 /// @author Angle Core Team
 /// @notice Swaps G-UNI liquidity
@@ -62,24 +60,21 @@ contract UniMigrator {
     ) external onlyOwner returns (address poolCreated) {
         address liquidityGauge;
         address stakingToken;
-        uint160 sqrtPriceX96;
+        uint160 sqrtPriceX96Existing;
         address token;
         if (gaugeType == 1) {
             liquidityGauge = _USDCGAUGE;
             stakingToken = _GUNIUSDC;
             token = _USDC;
-            (sqrtPriceX96, , , , , , ) = IUniswapV3Pool(_UNIUSDCPOOL).slot0();
+            (sqrtPriceX96Existing, , , , , , ) = IUniswapV3Pool(_UNIUSDCPOOL).slot0();
         } else {
             liquidityGauge = _ETHGAUGE;
             stakingToken = _GUNIETH;
             token = _WETH;
-            (sqrtPriceX96,,,,,,) =  IUniswapV3Pool(_ETHNEWPOOL).slot0();
         }
-        // Allowance needed to add liquidity
+        // Giving allowances: we need it to add and remove liquidity
         IERC20(token).safeApprove(address(_GUNIROUTER), type(uint256).max);
-        // Allowance needed to remove liquidity of the staking token
         IERC20(stakingToken).safeApprove(address(_GUNIROUTER), type(uint256).max);
-        // Allowance needed to add agEUR liquidity
         IERC20(_AGEUR).safeIncreaseAllowance(
             address(_GUNIROUTER),
             type(uint256).max - IERC20(_AGEUR).allowance(address(this), address(_GUNIROUTER))
@@ -99,49 +94,35 @@ contract UniMigrator {
             amountTokenMin,
             address(this)
         );
-        console.log("Amounts");
-        console.log(amountAgEUR, amountToken);
         if (gaugeType == 1) {
-            // In this case, it's USDC: we need to create the pool and initialize it at the same price
-            // as the previous pool
-            _UNI.createAndInitializePoolIfNecessary(_AGEUR, _USDC, 100, sqrtPriceX96);
+            // In this case, it's _USDC: we need to create the pool
+            _UNI.createAndInitializePoolIfNecessary(_AGEUR, _USDC, 100, sqrtPriceX96Existing);
             poolCreated = _GUNIFACTORY.createManagedPool(_AGEUR, _USDC, 100, 0, -276320, -273470);
         } else {
             // In this other case it's wETH
             // Increasing observation cardinality on the new pool (it already exists)
             IUniswapV3Pool(_ETHNEWPOOL).increaseObservationCardinalityNext(144);
-
-            // Computing the lower tick to not have nearly all liquidity invested
-            int256 ratioAmounts = (int256(amountToken) * 10**18) / int256(amountAgEUR);
-            
-            // sqrt price of the pool
-            int256 sqrtPrice = int(uint(sqrtPriceX96) * 1e18 >> (96));
-            // sqrt price upper bound np.sqrt(1/991), where 991 is just the price derived from the tick -69000
-            int256 sqrtUpperPrice = 31766046899489794;
-            int128 sqrtPriceLower = int128(
-                sqrtPrice +
-                    ((ratioAmounts * ((10**18 * 10**18) / sqrtUpperPrice - (10**18 * 10**18) / sqrtPrice)) / 10**18)
-            );
-            int128 priceLower = (sqrtPriceLower * sqrtPriceLower) / 10**18;
-            int128 lowerTick = ((_ln(priceLower) - _ln(10**18)) / (_ln(1000100000000000000) - _ln(10**18)));
-            lowerTick = (lowerTick / 10) * 10;
-            // We're creating the pool with not the final ticks: we will be rebalancing after some point
-            poolCreated = _GUNIFACTORY.createManagedPool(_AGEUR, _WETH, 500, 0, int24(lowerTick), -69000);
+            poolCreated = _GUNIFACTORY.createManagedPool(_AGEUR, _WETH, 500, 0, -96120, -69000);
         }
 
-        // Adding liquidity
-        _GUNIROUTER.addLiquidity(poolCreated, amountAgEUR, amountToken, amountAgEURMin, amountTokenMin, liquidityGauge);
-
-        if (gaugeType != 1) {
-            IGUniPool(poolCreated).executiveRebalance(-96120, -69000, 0, 0, false);
-            console.log("Amounts");
-            console.log(IERC20(_AGEUR).balanceOf(_ETHNEWPOOL), IERC20(_WETH).balanceOf(_ETHNEWPOOL));
-        }
-        
         // Transfering ownership of the new pool ot AngleMaster
         IGUniPool(poolCreated).transferOwnership(0xe02F8E39b8cFA7d3b62307E46077669010883459);
 
-        uint256 newGUNIBalance = IERC20(poolCreated).balanceOf(liquidityGauge);
+        // Adding liquidity
+        _GUNIROUTER.addLiquidity(poolCreated, amountAgEUR, amountToken, amountAgEURMin, amountTokenMin, liquidityGauge);
+        if (gaugeType != 1) {
+            // In the case of wETH, as the pool does not already exist: we have issues when removing this
+            uint256 agEURBalance = IERC20(_AGEUR).balanceOf(address(this));
+            uint256 ethBalance = IERC20(token).balanceOf(address(this));
+            _swapLogic(ethBalance, agEURBalance, poolCreated, liquidityGauge);
+            agEURBalance = IERC20(_AGEUR).balanceOf(address(this));
+            ethBalance = IERC20(token).balanceOf(address(this));
+            _swapLogic(ethBalance, agEURBalance, poolCreated, liquidityGauge);
+            agEURBalance = IERC20(_AGEUR).balanceOf(address(this));
+            ethBalance = IERC20(token).balanceOf(address(this));
+            _swapLogic(ethBalance, agEURBalance, poolCreated, liquidityGauge);
+        }
+        uint256 newGUNIBalance = IERC20(poolCreated).balanceOf(liquidityGauge);        
         ILiquidityGauge(liquidityGauge).set_staking_token_and_scaling_factor(
             poolCreated,
             (amountRecovered * 10**18) / newGUNIBalance
@@ -151,68 +132,24 @@ contract UniMigrator {
         IERC20(_AGEUR).safeTransfer(_GOVERNOR, IERC20(_AGEUR).balanceOf(address(this)));
     }
 
-    /**
-     * Calculate binary logarithm of x.  Revert if x <= 0.
-     *
-     * @param x signed 64.64-bit fixed point number
-     * @return signed 64.64-bit fixed point number
-     */
-    function _log2(int128 x) internal pure returns (int128) {
-        unchecked {
-            require(x > 0);
-
-            int256 msb = 0;
-            int256 xc = x;
-            if (xc >= 0x10000000000000000) {
-                xc >>= 64;
-                msb += 64;
-            }
-            if (xc >= 0x100000000) {
-                xc >>= 32;
-                msb += 32;
-            }
-            if (xc >= 0x10000) {
-                xc >>= 16;
-                msb += 16;
-            }
-            if (xc >= 0x100) {
-                xc >>= 8;
-                msb += 8;
-            }
-            if (xc >= 0x10) {
-                xc >>= 4;
-                msb += 4;
-            }
-            if (xc >= 0x4) {
-                xc >>= 2;
-                msb += 2;
-            }
-            if (xc >= 0x2) msb += 1; // No need to shift xc anymore
-
-            int256 result = (msb - 64) << 64;
-            uint256 ux = uint256(int256(x)) << uint256(127 - msb);
-            for (int256 bit = 0x8000000000000000; bit > 0; bit >>= 1) {
-                ux *= ux;
-                uint256 b = ux >> 255;
-                ux >>= 127 + b;
-                result += bit * int256(b);
-            }
-
-            return int128(result);
-        }
-    }
-
-    /**
-     * Calculate natural logarithm of x.  Revert if x <= 0.
-     *
-     * @param x signed 64.64-bit fixed point number
-     * @return signed 64.64-bit fixed point number
-     */
-    function _ln(int128 x) internal pure returns (int128) {
-        unchecked {
-            require(x > 0);
-
-            return int128(int256((uint256(int256(_log2(x))) * 0xB17217F7D1CF79ABC9E3B39803F2F6AF) >> 128));
+    function _swapLogic(
+        uint256 ethBalance,
+        uint256 agEURBalance,
+        address poolCreated,
+        address liquidityGauge
+    ) internal {
+        if (ethBalance > (10**18) / 2) {
+            IERC20(_WETH).safeApprove(_UNIROUTER, ethBalance / 2);
+            uint256 amountOut = IUniswapV3Router(_UNIROUTER).exactInputSingle(
+                ExactInputSingleParams(_WETH, _AGEUR, 500, address(this), block.timestamp, ethBalance / 2, 0, 0)
+            );
+            _GUNIROUTER.addLiquidity(poolCreated, agEURBalance + amountOut, ethBalance / 2, 0, 0, liquidityGauge);
+        } else if (agEURBalance > 1000 * 10**18) {
+            IERC20(_AGEUR).safeApprove(_UNIROUTER, agEURBalance / 2);
+            uint256 amountOut = IUniswapV3Router(_UNIROUTER).exactInputSingle(
+                ExactInputSingleParams(_AGEUR, _WETH, 500, address(this), block.timestamp, agEURBalance / 2, 0, 0)
+            );
+            _GUNIROUTER.addLiquidity(poolCreated, agEURBalance / 2, ethBalance + amountOut, 0, 0, liquidityGauge);
         }
     }
 
