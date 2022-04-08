@@ -136,12 +136,6 @@ contract UniMigrator {
             IGUniPool(poolCreated).executiveRebalance(-96120, -69000, 0, 0, false);
             console.log("Amounts");
             console.log(IERC20(_AGEUR).balanceOf(_ETHNEWPOOL), IERC20(_WETH).balanceOf(_ETHNEWPOOL));
-            /*
-            2273 093097601899487844
-            2462    478028007334003312
-            6030241 683617787583428501
-            6027137 588784044462840877
-            */
         }
         
         // Transfering ownership of the new pool ot AngleMaster
