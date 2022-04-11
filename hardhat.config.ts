@@ -39,7 +39,7 @@ const config: HardhatUserConfig = {
   solidity: {
     compilers: [
       {
-        version: '0.8.12',
+        version: '0.8.7',
         settings: {
           optimizer: {
             enabled: true,
@@ -63,11 +63,11 @@ const config: HardhatUserConfig = {
       hardfork: 'london',
       forking: {
         enabled: argv.fork || false,
-        url: nodeUrl('forkpolygon'),
+        url: nodeUrl('fork'),
         // For Polygon
-        blockNumber: 26536036,
+        // blockNumber: 26536036,
         // For mainnet
-        // blockNumber: 14256515,
+        blockNumber: 14546127,
       },
       mining: argv.disableAutoMining
         ? {
