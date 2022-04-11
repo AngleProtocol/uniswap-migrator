@@ -1,5 +1,3 @@
-/* simulation script to run on mainnet fork */
-// This script unpauses new collateral after they have been deployed
 import { network, ethers } from 'hardhat';
 import { CONTRACTS_ADDRESSES, ChainId } from '@angleprotocol/sdk';
 import { expect } from './chai-setup';
