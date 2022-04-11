@@ -99,9 +99,7 @@ contract UniMigrator {
             _UNI.createAndInitializePoolIfNecessary(_AGEUR, _USDC, 100, sqrtPriceX96Existing);
             poolCreated = _GUNIFACTORY.createManagedPool(_AGEUR, _USDC, 100, 0, -276320, -273470);
         } else {
-            // In this other case it's wETH
-            // Increasing observation cardinality on the new pool (it already exists)
-            IUniswapV3Pool(_ETHNEWPOOL).increaseObservationCardinalityNext(144);
+            // In this other case it's wETH and the pool already exists
             poolCreated = _GUNIFACTORY.createManagedPool(_AGEUR, _WETH, 500, 0, -96120, -69000);
         }
 
