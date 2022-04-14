@@ -103,8 +103,8 @@ contract UniMigrator {
             poolCreated = _GUNIFACTORY.createManagedPool(_AGEUR, _WETH, 500, 0, -96120, -69000);
         }
 
-        // Transfering ownership of the new pool ot AngleMaster
-        IGUniPool(poolCreated).transferOwnership(0xe02F8E39b8cFA7d3b62307E46077669010883459);
+        // Transfering ownership of the new pool to the guardian address
+        IGUniPool(poolCreated).transferOwnership(0x0C2553e4B9dFA9f83b1A6D3EAB96c4bAaB42d430);
 
         // Adding liquidity
         _GUNIROUTER.addLiquidity(poolCreated, amountAgEUR, amountToken, amountAgEURMin, amountTokenMin, liquidityGauge);

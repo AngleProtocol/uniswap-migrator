@@ -28,41 +28,38 @@ const func: DeployFunction = async ({ ethers, deployments, network }) => {
     from: deployer.address,
     log: !argv.ci,
   });
+  console.log('Success');
   const migratorAddress = (await deployments.get('UniMigrator')).address;
-
-  console.log('Success');
+  console.log(`Migrator Address ${migratorAddress}`);
+  console.log('');
 
   // ------------------------------------------------------------------------------------------------------
-  // ----------------------------- To be commented - Mainnet fork tests -----------------------------------
+  // ------------------------------------------- Mainnet fork tests ---------------------------------------
   // ------------------------------------------------------------------------------------------------------
-  const multiSig = CONTRACTS_ADDRESSES[ChainId.MAINNET].GovernanceMultiSig! as string;
-
-  const proxyAdmin = CONTRACTS_ADDRESSES[ChainId.MAINNET].ProxyAdmin;
-
-  const gaugeUSDC = CONTRACTS_ADDRESSES[ChainId.MAINNET].ExternalStakings![0].liquidityGaugeAddress;
-  const gaugeETH = CONTRACTS_ADDRESSES[ChainId.MAINNET].ExternalStakings![1].liquidityGaugeAddress;
-  console.log("The two gauges we'll be working on are:");
-  console.log(gaugeUSDC, gaugeETH);
-
-  console.log(`Multisig address: ${multiSig}`);
-
-  await network.provider.request({
-    method: 'hardhat_impersonateAccount',
-    params: [multiSig],
-  });
-
-  await network.provider.send('hardhat_setBalance', [multiSig, '0x10000000000000000000000000000']);
-
-  const multiSigSigner = await ethers.provider.getSigner(multiSig);
-
-  const proxyAdminAddress: string = proxyAdmin !== undefined ? proxyAdmin : '0x';
-  const contractProxyAdmin = new ethers.Contract(proxyAdminAddress, Interfaces.ProxyAdmin_Interface, multiSigSigner);
-  console.log('Upgrading gauge USDC');
-  await (await contractProxyAdmin.connect(multiSigSigner).upgrade(gaugeUSDC, implementationAddress)).wait();
-  console.log('Success');
-  console.log('Upgrading gauge ETH');
-  await (await contractProxyAdmin.connect(multiSigSigner).upgrade(gaugeETH, implementationAddress)).wait();
-  console.log('Success');
+  if (!network.live) {
+    const multiSig = CONTRACTS_ADDRESSES[ChainId.MAINNET].GovernanceMultiSig! as string;
+    const proxyAdmin = CONTRACTS_ADDRESSES[ChainId.MAINNET].ProxyAdmin;
+    const gaugeUSDC = CONTRACTS_ADDRESSES[ChainId.MAINNET].ExternalStakings![0].liquidityGaugeAddress;
+    const gaugeETH = CONTRACTS_ADDRESSES[ChainId.MAINNET].ExternalStakings![1].liquidityGaugeAddress;
+    console.log("The two gauges we'll be working on are:");
+    console.log(gaugeUSDC, gaugeETH);
+    console.log(`Multisig address: ${multiSig}`);
+    await network.provider.request({
+      method: 'hardhat_impersonateAccount',
+      params: [multiSig],
+    });
+    await network.provider.send('hardhat_setBalance', [multiSig, '0x10000000000000000000000000000']);
+    const multiSigSigner = await ethers.provider.getSigner(multiSig);
+    const proxyAdminAddress: string = proxyAdmin !== undefined ? proxyAdmin : '0x';
+    const contractProxyAdmin = new ethers.Contract(proxyAdminAddress, Interfaces.ProxyAdmin_Interface, multiSigSigner);
+    console.log('Upgrading gauge USDC');
+    await (await contractProxyAdmin.connect(multiSigSigner).upgrade(gaugeUSDC, implementationAddress)).wait();
+    console.log('Success');
+    console.log('');
+    console.log('Upgrading gauge ETH');
+    await (await contractProxyAdmin.connect(multiSigSigner).upgrade(gaugeETH, implementationAddress)).wait();
+    console.log('Success');
+  }
 };
 
 func.tags = ['gaugeImplem'];

@@ -31,6 +31,7 @@ async function main() {
   const erc20Interface = new utils.Interface([
     'function balanceOf(address token) external view returns(uint256)',
     'function approve(address spender, uint256 amount)',
+    'function totalSupply() external view returns(uint256)',
   ]);
 
   const gUNIUSDC = '0x2bD9F7974Bc0E4Cb19B8813F8Be6034F3E772add';
@@ -133,6 +134,65 @@ async function main() {
     formatAmount.ether(await agEURContract.balanceOf(oldUniPool)),
     formatAmount.usdc(await usdcContract.balanceOf(oldUniPool)),
   );
+  console.log('');
+
+  // Other deposit and withdrawal tests
+  console.log('Deposit/Withdrawal of less than the balance');
+  const depositor2Address = '0x12d3d411d010891a88bff2401bd73fa41fb1316e';
+  await network.provider.request({
+    method: 'hardhat_impersonateAccount',
+    params: [depositor2Address],
+  });
+
+  await network.provider.send('hardhat_setBalance', [depositor2Address, '0x10000000000000000000000000000']);
+  const depositor2Signer = await ethers.provider.getSigner(depositor2Address);
+
+  const balance2 = await contractLiquidityGaugeOtherSigner.balanceOf(depositor2Signer._address);
+  const prevTotalSupply = await contractLiquidityGaugeOtherSigner.totalSupply();
+  console.log('Withdrawer2 Balance', balance2.toString());
+  await (
+    await contractLiquidityGaugeOtherSigner.connect(depositor2Signer)['withdraw(uint256)'](balance2.div(3))
+  ).wait();
+  console.log('Success on the withdrawal of a portion of the balance');
+
+  expect(await contractLiquidityGaugeOtherSigner.balanceOf(depositor2Signer._address)).to.be.equal(
+    balance2.mul(2).div(3).add(1),
+  );
+  expect(await contractLiquidityGaugeOtherSigner.totalSupply()).to.be.equal(prevTotalSupply.sub(balance2.div(3)));
+  const expectedBalance2 = balance2.div(3).mul(parseAmount.ether('1')).div(scalingFactor);
+  expect(await newGuniContract.balanceOf(depositor2Signer._address)).to.be.equal(expectedBalance2);
+  console.log(`New G-UNI token balance ${expectedBalance2} vs. withdrawn amount ${balance2.div(3)}`);
+  console.log('');
+  console.log('Now testing deposit');
+  await (
+    await newGuniContract
+      .connect(depositor2Signer)
+      .approve(contractLiquidityGaugeOtherSigner.address, parseAmount.ether('1000'))
+  ).wait();
+  const prevBalance2 = await newGuniContract.balanceOf(contractLiquidityGaugeOtherSigner.address);
+  await (
+    await contractLiquidityGaugeOtherSigner.connect(depositor2Signer)['deposit(uint256)'](expectedBalance2.div(4))
+  ).wait();
+
+  expect(await newGuniContract.balanceOf(depositor2Signer._address)).to.be.equal(expectedBalance2.mul(3).div(4));
+  expect(await newGuniContract.balanceOf(contractLiquidityGaugeOtherSigner.address)).to.be.equal(
+    prevBalance2.add(expectedBalance2.div(4)),
+  );
+  const estimatedAddedAmountInTheContract = expectedBalance2.div(4).mul(scalingFactor).div(parseAmount.ether('1'));
+  console.log(
+    `Deposited new G-UNI token amount ${expectedBalance2.div(
+      4,
+    )} vs. added balanceOf in the contract ${estimatedAddedAmountInTheContract} `,
+  );
+  // Balance is rounded down
+  expect(await contractLiquidityGaugeOtherSigner.balanceOf(depositor2Signer._address)).to.be.equal(
+    balance2.mul(2).div(3).add(estimatedAddedAmountInTheContract).add(1),
+  );
+  expect(await contractLiquidityGaugeOtherSigner.totalSupply()).to.be.equal(
+    prevTotalSupply.sub(balance2.div(3)).add(estimatedAddedAmountInTheContract),
+  );
+  console.log('Success on the Deposit!');
+  console.log('');
 }
 
 main().catch(error => {
