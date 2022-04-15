@@ -131,7 +131,6 @@ contract UniMigrator {
                 amountToken -= amountIn;
             } else {
                 // Need to sell agEUR to increase agEUR in the pool: computing the optimal movement as if in UniV2 and assuming no fees
-                // This is the optimal bought amount to get to target price
                 uint256 amountIn = _sqrt((xBalance * yBalance) / oldPoolSpotPrice) * 10**9 - xBalance;
                 IERC20(_AGEUR).safeApprove(_UNIROUTER, amountIn);
 
