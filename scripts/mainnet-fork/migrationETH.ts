@@ -20,7 +20,7 @@ async function main() {
   await network.provider.send('hardhat_setBalance', [governor, '0x10000000000000000000000000000']);
   const governorSigner = await ethers.provider.getSigner(governor);
   // For deposits and withdrawals
-  const depositor = '0x2E7212016BA40a1ee366F3a54C5aD6b4916eae74';
+  const depositor = '0x3Ad4CeE90D0Eb10769AF8F3D8a58f9df39Af45Db';
   await network.provider.request({
     method: 'hardhat_impersonateAccount',
     params: [depositor],

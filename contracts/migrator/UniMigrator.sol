@@ -48,7 +48,7 @@ contract UniMigrator {
     /// @notice Changes the minter address
     /// @param owner_ Address of the new owner
     function setOwner(address owner_) external onlyOwner {
-        require(owner_ != address(0), "0 address");
+        require(owner_ != address(0), "0");
         owner = owner_;
     }
 
@@ -140,6 +140,11 @@ contract UniMigrator {
                 amountAgEUR -= amountIn;
                 amountToken += amountOut;
             }
+            (newPoolPrice, , , , , , ) = IUniswapV3Pool(_ETHNEWPOOL).slot0();
+            // Scale of the sqrtPrice is 10**27: we're checking if we got close enough (first 9 figures should be fine)
+            if (newPoolPrice > sqrtPriceX96Existing) {
+                require(newPoolPrice - sqrtPriceX96Existing < 1 ether);
+            } else require(sqrtPriceX96Existing - newPoolPrice < 1 ether);
         }
 
         // Transfering ownership of the new pool to the guardian address
