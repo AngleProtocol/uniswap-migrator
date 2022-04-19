@@ -40,7 +40,9 @@ async function main() {
   console.log('Liquidity Migration');
   // TODO check the slippage protection here: how much you would have gotten from the previous pool
   // for this you can run the liquidityRemoval.ts file
-  const tx = await (await uniMigratorContract.connect(deployer).migratePool(2, 0, 0)).wait();
+  const tx = await (
+    await uniMigratorContract.connect(deployer).migratePool(2, '3986031565143969358130640', '1883378285636285763645')
+  ).wait();
   console.log('Success');
   console.log('');
   console.log('Checking leftover GUNI balance');

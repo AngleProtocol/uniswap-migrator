@@ -20,9 +20,9 @@ async function main() {
   const usdc = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48';
 
   // Choose the gauge you want to simulate here
-  const guniToken = guniUSDC;
-  const gauge = usdcGauge;
-  const token = usdc;
+  const guniToken = guniETH;
+  const gauge = ethGauge;
+  const token = weth;
   await network.provider.request({
     method: 'hardhat_impersonateAccount',
     params: [gauge],
