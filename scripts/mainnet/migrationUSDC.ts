@@ -16,7 +16,7 @@ async function main() {
 
   const newLiquidityGaugeInterface = new utils.Interface(['function scaling_factor() external view returns(uint256)']);
 
-  const gaugeETH = CONTRACTS_ADDRESSES[ChainId.MAINNET].ExternalStakings![1].liquidityGaugeAddress;
+  const gaugeETH = CONTRACTS_ADDRESSES[ChainId.MAINNET].ExternalStakings![0].liquidityGaugeAddress;
   const liquidityGaugeAddress: string = gaugeETH !== undefined ? gaugeETH : '0x';
   const contractLiquidityGauge = new ethers.Contract(liquidityGaugeAddress, LiquidityGaugeV4_Interface, deployer);
   const contractLiquidityGaugeUpgrade = new ethers.Contract(
@@ -28,12 +28,16 @@ async function main() {
   const uniMigrator = await deployments.get('UniMigrator');
   const uniMigratorContract = new ethers.Contract(uniMigrator.address, uniMigratorInterface, deployer);
 
+  /*
   console.log('Liquidity Migration');
   // TODO check the slippage protection here: how much you would have gotten from the previous pool
   // for this you can run the liquidityRemoval.ts file
-  const tx = await (await uniMigratorContract.connect(deployer).migratePool(1, 0, 0)).wait();
+  const tx = await (
+    await uniMigratorContract.connect(deployer).migratePool(1, '14895934363876258400142633', 6225917890933)
+  ).wait();
   console.log('Success');
   console.log('');
+  */
 
   console.log('Scaling factor');
   const scalingFactor = await contractLiquidityGaugeUpgrade.scaling_factor();
