@@ -22,11 +22,21 @@ async function main() {
   await network.provider.send('hardhat_setBalance', [governor, '0x10000000000000000000000000000']);
   const governorSigner = await ethers.provider.getSigner(governor);
 
+  const depositor = '0x4F4715CA99C973A55303bc4a5f3e3acBb9fF75DB';
+  await network.provider.request({
+    method: 'hardhat_impersonateAccount',
+    params: [depositor],
+  });
+  await network.provider.send('hardhat_setBalance', [depositor, '0x10000000000000000000000000000']);
+  const depositorSigner = await ethers.provider.getSigner(depositor);
+
   const newLiquidityGaugeInterface = new utils.Interface([
     'function recover_erc20(address token, address addr, uint256 amount) external',
     'function set_staking_token_and_scaling_factor(address token, uint256 _value) external',
     'function initialized() external view returns(bool)',
-    'function logValues() external view returns(uint256)',
+    'function staking_token() external view returns(address)',
+    'function decimal_staking_token() external view returns(uint256)',
+    'function scaling_factor() external view returns(uint256)',
   ]);
 
   const erc20Interface = new utils.Interface(['function balanceOf(address token) external view returns(uint256)']);
@@ -37,8 +47,6 @@ async function main() {
   const angle = CONTRACTS_ADDRESSES[ChainId.MAINNET].ANGLE;
   const veAngle = CONTRACTS_ADDRESSES[ChainId.MAINNET].veANGLE;
   const gaugeUSDC = CONTRACTS_ADDRESSES[ChainId.MAINNET].ExternalStakings![0].liquidityGaugeAddress;
-
-  const gaugeETH = CONTRACTS_ADDRESSES[ChainId.MAINNET].ExternalStakings![1].liquidityGaugeAddress;
   const liquidityGaugeAddress: string = gaugeUSDC !== undefined ? gaugeUSDC : '0x';
   const contractLiquidityGauge = new ethers.Contract(liquidityGaugeAddress, LiquidityGaugeV4_Interface, governorSigner);
   const contractLiquidityGaugeUpgrade = new ethers.Contract(
@@ -67,9 +75,6 @@ async function main() {
   ).toString();
   console.log(value);
 
-  const value2 = await contractLiquidityGaugeUpgrade.logValues();
-  console.log(value2.toString());
-
   const rewardData = await contractLiquidityGauge.reward_data(angle);
   console.log(rewardData);
   console.log('');
@@ -78,11 +83,32 @@ async function main() {
   const toAddress = '0xC16B81Af351BA9e64C1a069E3Ab18c244A1E3049';
   const amount = 100;
   console.log('Now checking recoverERC20 with stakingToken');
-  await (await contractLiquidityGaugeUpgrade.connect(governorSigner).recover_erc20(gUNIUSDC, toAddress, amount)).wait();
   const guniContract = new ethers.Contract(gUNIUSDC, erc20Interface, governorSigner);
+  await (await contractLiquidityGaugeUpgrade.connect(governorSigner).recover_erc20(gUNIUSDC, toAddress, amount)).wait();
+
   expect(await guniContract.balanceOf(toAddress)).to.be.equal(amount);
   console.log('Success');
   console.log('');
+
+  console.log('New admin functions revert if not admin');
+  await expect(contractLiquidityGaugeUpgrade.connect(depositorSigner).recover_erc20(gUNIUSDC, toAddress, amount)).to.be
+    .reverted;
+  await expect(
+    contractLiquidityGaugeUpgrade.connect(depositorSigner).set_staking_token_and_scaling_factor(gUNIUSDC, amount),
+  ).to.be.reverted;
+  console.log('Success on the admin functions');
+  console.log('');
+  console.log('Set staking token success if admin');
+  await (
+    await contractLiquidityGaugeUpgrade
+      .connect(governorSigner)
+      .set_staking_token_and_scaling_factor(usdcContract.address, 300)
+  ).wait();
+
+  expect(await contractLiquidityGaugeUpgrade.staking_token()).to.be.equal(usdcContract.address);
+  expect(await contractLiquidityGaugeUpgrade.decimal_staking_token()).to.be.equal(6);
+  expect(await contractLiquidityGaugeUpgrade.scaling_factor()).to.be.equal(300);
+  console.log('Success');
 }
 
 main().catch(error => {
